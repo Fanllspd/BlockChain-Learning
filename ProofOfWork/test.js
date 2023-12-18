@@ -1,12 +1,12 @@
 const sha256 = require('crypto-js/sha256')
-
 const ecLib = require('elliptic').ec
 const ec = new ecLib('secp256k1') // 椭圆曲线
 
 class Transaction {
   constructor(from, to, amount) {
-    if (from == null || from == '')
-      throw new Error('Transaction cannot be empty!')
+    // if (from == null || from == '')
+    // 视频里没说，但是我觉得应该检验一下
+    // throw new Error('Transaction cannot be empty!')
     this.from = from // 发送者公钥
     this.to = to // 接收者公钥
     this.amount = amount // 转账数量
@@ -27,6 +27,7 @@ class Transaction {
   // 检查交易合法性
   isValid() {
     // 对矿工奖励进行特殊判断
+    // 因为矿工奖励是区块链给矿工转账，所以公钥是空
     if (this.from === '') return true
 
     const keyObj = ec.keyFromPublic(this.from, 'hex')
@@ -34,20 +35,6 @@ class Transaction {
   }
 }
 
-// const keyPairSender = ec.genKeyPair()
-// const keyPairReceiver = ec.genKeyPair()
-
-// const t1 = new Transaction(
-//   keyPairSender.getPublic('hex'),
-//   keyPairReceiver.getPublic('hex'),
-//   10
-// )
-// t1.sign(keyPairSender)
-// console.log(t1)
-// t1.amount = 20
-// console.log(t1.isValid())
-
-// 区块类
 class Block {
   constructor(transactions, preHash) {
     this.transactions = transactions
@@ -61,8 +48,8 @@ class Block {
   computeHash() {
     return sha256(
       JSON.stringify(this.transactions) +
-        this.preHash +
         this.nonce +
+        this.preHash +
         this.timeStamp
     ).toString()
   }
@@ -78,9 +65,7 @@ class Block {
 
   // 挖！
   mine(difficulty) {
-    // 挖矿前进行检验transaction合法性
-    if (!this.validateTransaction())
-      throw new Error('Found InValid Transaction before Mining!') //但是挖的时候对transaction进行篡改呢
+    this.validateTransaction()
     while (true) {
       this.hash = this.computeHash()
       if (this.hash.substring(0, difficulty) === this.getAnswer(difficulty))
@@ -101,18 +86,22 @@ class Block {
   }
 }
 
-// 链
 class Chain {
   constructor() {
-    this.chain = [this.makeGenesis()] // 初始化原始
+    this.chain = [this.makeGenesis()] // 一个链中应由多个区块组成所以赋值成数组
+    this.difficulty = 3 // 设置难度为3，也就是需要hash满足前缀三位全为0
     this.transactionPool = []
     this.minerReward = 50
-    this.difficulty = 3 // 设置挖矿难度
   }
 
-  // 生成原始区块
+  // 生成起始区间
   makeGenesis() {
-    return new Block('原始人', '') // 原始区块，索引为0，所以没有preHash
+    return new Block('Origin', '') // 起始区块，索引为0，所以preHash为0
+  }
+
+  // 获得最新的区块
+  getLatestBlock() {
+    return this.chain[this.chain.length - 1]
   }
 
   // 手动增加区块
@@ -121,13 +110,16 @@ class Chain {
     // 因为在外部无法得知此时的preHash是什么，所以手动赋值
     newBlock.hash = newBlock.computeHash()
     // computeHash()在Block类是构造时候调用的，但是newBlock传入的时候没有preHash，所以构造的Hash是错的，需要重新生成
-    newBlock.mine(this.difficulty)
+    newBlock.mine(this.difficulty) // 进行比对前缀
     this.chain.push(newBlock) // 别忘了往链上添加
   }
 
-  // 获得最新的区块
-  getLatestBlock() {
-    return this.chain[this.chain.length - 1]
+  // 方便添加Transaction到Pool
+  addTransaction(transaction) {
+    // 检验transaction是否合法
+    if (!transaction.isValid())
+      throw new Error('Found InValid Transaction before adding to pool!')
+    this.transactionPool.push(transaction)
   }
 
   // 对区块进行校验
@@ -142,7 +134,7 @@ class Chain {
       if (!this.chain[i].validateTransaction())
         throw new Error('Found InValid Transaction while validating Chain')
 
-      // 判断当前Block的data是否被篡改
+      // 判断当前Block的data是否被篡改8
       const blockToValidate = this.chain[i]
       if (blockToValidate.hash !== blockToValidate.computeHash()) return false
 
@@ -150,16 +142,7 @@ class Chain {
       const preBlock = this.chain[i - 1]
       if (preBlock.hash !== blockToValidate.preHash) return false
     }
-    console.log('ValidateChain Successful!')
     return true
-  }
-
-  // 方便添加Transaction到Pool
-  addTransaction(transaction) {
-    // 检验transaction是否合法
-    if (!transaction.isValid())
-      throw new Error('Found InValid Transaction before adding to pool!')
-    this.transactionPool.push(transaction)
   }
 
   // 交易池
@@ -177,31 +160,32 @@ class Chain {
   }
 }
 
-const fanCoin = new Chain()
-// console.log(fanCoin)
+// const fanChain = new Chain()
+// const block1 = new Block('b1', '111')
+// const block2 = new Block('b2', '2')
+// fanChain.addBlock(block1)
+// fanChain.addBlock(block2)
+// console.log(fanChain)
+// console.log(fanChain.validateChain())
 
-// let block2 = new Block('区块2', '')
-// let block3 = new Block('区块3', '')
+// 模拟篡改
+// fanChain.chain[1].data = 'fake'
+// fanChain.chain[1].hash = fanChain.chain[1].computeHash()
+// console.log(fanChain.validateChain())
+// console.log(fanChain)
 
-// fanCoin.addBlock(block2)
-// fanCoin.addBlock(block3)
-// console.log(fanCoin.validateChain())
-// fanCoin.chain[1].data = '区块233'
-// fanCoin.chain[0].data = '原始人寄'
-// fanCoin.chain[0].hash = fanCoin.chain[0].computeHash()
-//   '46a621ecdd4478020edc31b7a861125f236cd29450fede6395a32f7cfb6d388f' // 需要考虑到直接修改hash的情况
-
-// fanCoin.chain[1].data = '区块233'
-// fanCoin.chain[1].mine(3)
-
-// const t1 = new Transaction('fan1', 'fan2', 10)
-// const t2 = new Transaction('fan2', 'fan1', 5)
+// const fanCoin = new Chain()
+// const t1 = new Transaction('addr1', 'addr2', 10)
+// const t2 = new Transaction('addr2', 'addr1', 20)
 // fanCoin.addTransaction(t1)
 // fanCoin.addTransaction(t2)
-// fanCoin.mineTransactionPool('牢大')
+// fanCoin.mineTransactionPool('fan')
 // console.log(fanCoin)
-// console.log(fanCoin.chain[1])
-// fanCoin.validateChain()
+// console.log(fanCoin.chain[1].transactions)
+
+// fanCoin.mineTransactionPool(keyPairSender.getPublic('hex'))
+// 签名测试
+const fanCoin = new Chain()
 
 const keyPairSender = ec.genKeyPair()
 const keyPairReceiver = ec.genKeyPair()
@@ -212,16 +196,9 @@ const t1 = new Transaction(
   10
 )
 t1.sign(keyPairSender)
-fanCoin.addTransaction(t1)
-fanCoin.mineTransactionPool(keyPairSender.getPublic('hex'))
-console.log(fanCoin.chain[1])
-console.log(t1)
+console.log(fanCoin)
 
-// 篡改其转账数量
-// t1.amount = 20
-// console.log(t1.isValid()) // false
-// console.log(t1.isValid())
-// fanCoin.addTransaction(t1)
-// fanCoin.mineTransactionPool('fan')
-// console.log(fanCoin)
-// console.log(fanCoin.chain[1])
+console.log(t1.isValid())
+
+fanCoin.mineTransactionPool(keyPairSender.getPublic('hex'))
+console.log(fanCoin.chain)
